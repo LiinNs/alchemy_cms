@@ -264,7 +264,6 @@ module Alchemy
                   "meta_description" => nil,
                   "meta_keywords" => nil,
                   "name" => false,
-                  "page_layout" => "readonly",
                   "public_on" => nil,
                   "public_until" => nil,
                   "restricted" => false,
@@ -301,6 +300,7 @@ module Alchemy
                   "gallery",
                   "right_column",
                   "left_column",
+                  "old",
                 ],
               },
               {

@@ -4,8 +4,10 @@ require "rails_helper"
 
 module Alchemy
   describe Element do
+    it { is_expected.to belong_to(:page_version) }
+
     # to prevent memoization
-    before { Element.instance_variable_set("@definitions", nil) }
+    before { ElementDefinition.instance_variable_set("@definitions", nil) }
 
     # ClassMethods
 
@@ -23,8 +25,8 @@ module Alchemy
       end
 
       it "should merge given attributes into defined ones" do
-        el = Element.new(name: "article", page_id: 1)
-        expect(el.page_id).to eq(1)
+        el = Element.new(name: "article", page_version_id: 1)
+        expect(el.page_version_id).to eq(1)
       end
 
       it "should not have forbidden attributes from definition" do
@@ -34,9 +36,11 @@ module Alchemy
     end
 
     describe ".create" do
-      let(:page) { build(:alchemy_page) }
+      let(:page_version) { build(:alchemy_page_version) }
 
-      subject(:element) { described_class.create(page: page, name: "article") }
+      subject(:element) do
+        described_class.create(page_version: page_version, name: "article", autogenerate_contents: true)
+      end
 
       it "creates contents" do
         expect(element.contents).to match_array([
@@ -50,7 +54,7 @@ module Alchemy
       context "if autogenerate_contents set to false" do
         subject(:element) do
           described_class.create(
-            page: page,
+            page_version: page_version,
             name: "article",
             autogenerate_contents: false,
           )
@@ -63,7 +67,7 @@ module Alchemy
 
       context "if autogenerate is given in definition" do
         subject(:element) do
-          described_class.create(page: page, name: "slider")
+          described_class.create(page_version: page_version, name: "slider")
         end
 
         it "creates nested elements" do
@@ -72,16 +76,22 @@ module Alchemy
           ])
         end
 
+        it "sets parent elements page_version" do
+          expect(element.nested_elements.map(&:page_version_id)).to eq([
+            element.page_version_id,
+          ])
+        end
+
         context "if element name is not a nestable element" do
           subject(:element) do
             described_class.create(
-              page: page,
+              page_version: page_version,
               name: "slider",
             )
           end
 
           before do
-            expect(Alchemy::Element).to receive(:definitions).at_least(:once) do
+            expect(Alchemy::ElementDefinition).to receive(:all).at_least(:once) do
               [
                 { "name" => "slider", "nestable_elements" => ["foo"], "autogenerate" => ["bar"] },
               ]
@@ -102,7 +112,7 @@ module Alchemy
         context "if autogenerate_nested_elements set to false" do
           subject(:element) do
             described_class.create(
-              page: page,
+              page_version: page_version,
               name: "slider",
               autogenerate_nested_elements: false,
             )
@@ -127,11 +137,11 @@ module Alchemy
       end
 
       context "with differences" do
-        let(:new_page) { create(:alchemy_page) }
-        subject(:copy) { Element.copy(element, { page_id: new_page.id }) }
+        let(:new_page_version) { create(:alchemy_page_version) }
+        subject(:copy) { Element.copy(element, { page_version_id: new_page_version.id }) }
 
         it "should create a new record with all attributes of source except given differences" do
-          expect(copy.page_id).to eq(new_page.id)
+          expect(copy.page_version_id).to eq(new_page_version.id)
         end
       end
 
@@ -160,16 +170,32 @@ module Alchemy
           expect(subject.nested_elements).to_not be_empty
         end
 
-        context "copy to new page" do
-          let(:new_page) { create(:alchemy_page) }
+        context "copy to new page version" do
+          let(:new_page_version) { create(:alchemy_page_version) }
 
           subject(:new_element) do
-            Element.copy(element, { page_id: new_page.id })
+            Element.copy(element, { page_version_id: new_page_version.id })
           end
 
-          it "should set page id to new page's id" do
+          it "should set page_version id to new page_version's id" do
             new_element.nested_elements.each do |nested_element|
-              expect(nested_element.page_id).to eq(new_page.id)
+              expect(nested_element.page_version_id).to eq(new_page_version.id)
+            end
+          end
+        end
+
+        context "copy to new page version" do
+          let(:public_version) do
+            element.page.versions.create!(public_on: Time.current)
+          end
+
+          subject(:new_element) do
+            Element.copy(element, { page_version_id: public_version.id })
+          end
+
+          it "sets page_version id" do
+            new_element.nested_elements.each do |nested_element|
+              expect(nested_element.page_version_id).to eq(public_version.id)
             end
           end
         end
@@ -330,30 +356,10 @@ module Alchemy
       end
     end
 
-    context "trash" do
-      let(:element) { create(:alchemy_element) }
-
-      describe ".not_trashed" do
-        before { element }
-
-        it "should return a collection of not trashed elements" do
-          expect(Element.not_trashed.to_a).to eq([element])
-        end
-      end
-
-      describe ".trashed" do
-        before { element.trash! }
-
-        it "should return a collection of trashed elements" do
-          expect(Element.trashed.to_a).to eq([element])
-        end
-      end
-    end
-
     describe ".all_from_clipboard_for_page" do
-      let(:element_1) { build_stubbed(:alchemy_element) }
-      let(:element_2) { build_stubbed(:alchemy_element, name: "news") }
-      let(:page) { build_stubbed(:alchemy_page, :public) }
+      let(:element_1) { create(:alchemy_element, page_version: page.draft_version) }
+      let(:element_2) { create(:alchemy_element, name: "news", page_version: page.draft_version) }
+      let(:page) { create(:alchemy_page, :public) }
       let(:clipboard) { [{ "id" => element_1.id.to_s }, { "id" => element_2.id.to_s }] }
 
       before do
@@ -567,17 +573,17 @@ module Alchemy
       end
     end
 
-    context "previous and next elements." do
-      let(:page) { create(:alchemy_page, :language_root) }
+    describe "previous and next elements." do
+      let(:page) { create(:alchemy_page, :public, :language_root) }
 
       before(:each) do
-        @element1 = create(:alchemy_element, page: page, name: "headline")
-        @element2 = create(:alchemy_element, page: page)
-        @element3 = create(:alchemy_element, page: page, name: "text")
+        @element1 = create(:alchemy_element, page: page, page_version: page.public_version, name: "headline")
+        @element2 = create(:alchemy_element, page: page, page_version: page.public_version)
+        @element3 = create(:alchemy_element, page: page, page_version: page.public_version, name: "text")
       end
 
       describe "#prev" do
-        it "should return previous element on same page" do
+        it "should return previous element on same page version" do
           expect(@element3.prev).to eq(@element2)
         end
 
@@ -589,7 +595,7 @@ module Alchemy
       end
 
       describe "#next" do
-        it "should return next element on same page" do
+        it "should return next element on same page version" do
           expect(@element2.next).to eq(@element3)
         end
 
@@ -636,8 +642,7 @@ module Alchemy
     describe "#update_contents" do
       subject { element.update_contents(params) }
 
-      let(:page) { build_stubbed(:alchemy_page) }
-      let(:element) { build_stubbed(:alchemy_element, page: page) }
+      let(:element) { build_stubbed(:alchemy_element) }
       let(:content1) { double(:content, id: 1) }
       let(:content2) { double(:content, id: 2) }
 
@@ -687,16 +692,16 @@ module Alchemy
     end
 
     describe ".after_update" do
-      let(:element) { create(:alchemy_element, page: page) }
+      let(:element) { create(:alchemy_element, page_version: page_version) }
 
-      let(:page) do
-        create(:alchemy_page).tap do |page|
-          page.update_column(:updated_at, 3.hours.ago)
+      let(:page_version) do
+        create(:alchemy_page_version).tap do |page_version|
+          page_version.update_column(:updated_at, 3.hours.ago)
         end
       end
 
-      it "touches the page" do
-        expect { element.save }.to change { page.updated_at }
+      it "touches the page_version" do
+        expect { element.save }.to change { page_version.updated_at }
       end
 
       context "with touchable pages" do
@@ -771,40 +776,28 @@ module Alchemy
       end
     end
 
-    describe "#trash!" do
-      let(:element) { create(:alchemy_element) }
+    describe "#deprecated?" do
+      subject { element.deprecated? }
 
-      let(:trashed_element) do
-        element.trash!
-        element
+      let(:element) { build(:alchemy_element) }
+
+      before do
+        expect(element).to receive(:definition) { definition }
       end
 
-      subject { trashed_element }
-
-      it { is_expected.not_to be_public }
-      it { is_expected.to be_folded }
-
-      describe "#position" do
-        subject { super().position }
-        it { is_expected.to be_nil }
+      context "definition has 'deprecated' key with true value" do
+        let(:definition) { { "deprecated" => true } }
+        it { is_expected.to be(true) }
       end
 
-      specify { expect { element.trash! }.to_not change(element, :page_id) }
+      context "definition has 'deprecated' key with foo value" do
+        let(:definition) { { "deprecated" => "This is deprecated" } }
+        it { is_expected.to be(true) }
+      end
 
-      context "with already one trashed element on the same page" do
-        let(:element_2) do
-          create(:alchemy_element, page: trashed_element.page)
-        end
-
-        before do
-          trashed_element
-          element_2
-        end
-
-        it "it should be possible to trash another" do
-          element_2.trash!
-          expect(Element.trashed.to_a).to include(trashed_element, element_2)
-        end
+      context "definition has no 'deprecated' key" do
+        let(:definition) { { "name" => "article" } }
+        it { is_expected.to be(false) }
       end
     end
 
@@ -815,8 +808,8 @@ module Alchemy
     end
 
     describe "#cache_key" do
-      let(:page) { stub_model(Page, published_at: Time.current - 1.week) }
-      let(:element) { stub_model(Element, page: page, updated_at: Time.current) }
+      let(:page) { create(:alchemy_page, published_at: Time.current - 1.week) }
+      let(:element) { create(:alchemy_element, page_version: page.draft_version, updated_at: Time.current) }
 
       subject { element.cache_key }
 
@@ -893,16 +886,6 @@ module Alchemy
           expect(subject).to include(hidden_nested_element)
         end
       end
-
-      context "with trashed nested elements" do
-        let!(:trashed_nested_element) do
-          create(:alchemy_element, parent_element: element, page: page).tap(&:trash!)
-        end
-
-        it "does not include them" do
-          expect(subject).to_not include(trashed_nested_element)
-        end
-      end
     end
 
     describe "#nested_elements" do
@@ -920,16 +903,6 @@ module Alchemy
         context "with hidden nested elements" do
           let!(:hidden_nested_element) do
             create(:alchemy_element, parent_element: element, page: page, public: false)
-          end
-
-          it "does not include them" do
-            expect(subject).to eq([nested_element])
-          end
-        end
-
-        context "with trashed nested elements" do
-          let!(:hidden_trashed_element) do
-            create(:alchemy_element, parent_element: element, page: page).tap(&:trash!)
           end
 
           it "does not include them" do

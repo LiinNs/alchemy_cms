@@ -8,6 +8,8 @@ namespace :alchemy do
       Rake::Task["alchemy:tidy:element_positions"].invoke
       Rake::Task["alchemy:tidy:content_positions"].invoke
       Rake::Task["alchemy:tidy:remove_orphaned_records"].invoke
+      Rake::Task["alchemy:tidy:remove_trashed_elements"].invoke
+      Rake::Task["alchemy:tidy:remove_duplicate_legacy_urls"].invoke
     end
 
     desc "Fixes element positions."
@@ -34,6 +36,16 @@ namespace :alchemy do
     desc "Remove orphaned contents."
     task remove_orphaned_contents: [:environment] do
       Alchemy::Tidy.remove_orphaned_contents
+    end
+
+    desc "Remove trashed elements."
+    task remove_trashed_elements: [:environment] do
+      Alchemy::Tidy.remove_trashed_elements
+    end
+
+    desc "Remove duplicate legacy URLs"
+    task remove_duplicate_legacy_urls: [:environment] do
+      Alchemy::Tidy.remove_duplicate_legacy_urls
     end
 
     desc "List Alchemy elements usage"

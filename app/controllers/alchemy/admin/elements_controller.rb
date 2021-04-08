@@ -3,27 +3,31 @@
 module Alchemy
   module Admin
     class ElementsController < Alchemy::Admin::BaseController
-      before_action :load_element, only: [:update, :trash, :fold, :publish]
+      before_action :load_element, only: [:update, :destroy, :fold, :publish]
       authorize_resource class: Alchemy::Element
 
       def index
-        @page = Page.find(params[:page_id])
-        @elements = @page.all_elements.not_nested.unfixed.not_trashed.includes(*element_includes)
-        @fixed_elements = @page.all_elements.fixed.not_trashed.includes(*element_includes)
+        @page_version = PageVersion.find(params[:page_version_id])
+        @page = @page_version.page
+        elements = @page_version.elements.order(:position).includes(*element_includes)
+        @elements = elements.not_nested.unfixed
+        @fixed_elements = elements.not_nested.fixed
       end
 
       def new
-        @page = Page.find(params[:page_id])
+        @page_version = PageVersion.find(params[:page_version_id])
+        @page = @page_version.page
         @parent_element = Element.find_by(id: params[:parent_element_id])
         @elements = @page.available_elements_within_current_scope(@parent_element)
-        @element = @page.elements.build
+        @element = @page_version.elements.build
         @clipboard = get_clipboard("elements")
         @clipboard_items = Element.all_from_clipboard_for_page(@clipboard, @page)
       end
 
       # Creates a element as discribed in config/alchemy/elements.yml on page via AJAX.
       def create
-        @page = Page.find(params[:element][:page_id])
+        @page_version = PageVersion.find(params[:element][:page_version_id])
+        @page = @page_version.page
         Element.transaction do
           if @paste_from_clipboard = params[:paste_from_clipboard].present?
             @element = paste_element_from_clipboard
@@ -38,7 +42,7 @@ module Alchemy
         if @element.valid?
           render :create
         else
-          @element.page = @page
+          @element.page_version = @page_version
           @elements = @page.available_element_definitions
           @clipboard = get_clipboard("elements")
           @clipboard_items = Element.all_from_clipboard_for_page(@clipboard, @page)
@@ -61,30 +65,29 @@ module Alchemy
         end
       end
 
+      def destroy
+        @element.destroy
+        @notice = Alchemy.t("Successfully deleted element") % { element: @element.display_name }
+      end
+
       def publish
         @element.update(public: !@element.public?)
       end
 
-      # Trashes the Element instead of deleting it.
-      def trash
-        @page = @element.page
-        @element.trash!
-      end
-
       def order
-        @trashed_element_ids = Element.trashed.where(id: params[:element_ids]).pluck(:id)
         @parent_element = Element.find_by(id: params[:parent_element_id])
         Element.transaction do
-          params.fetch(:element_ids, []).each_with_index do |element_id, idx|
-            # Ensure to set page_id and parent_element_id to the current
-            # because of trashed elements could still have old values
-            Element.where(id: element_id).update_all(
-              page_id: params[:page_id],
+          params.fetch(:element_ids, []).each.with_index(1) do |element_id, position|
+            # We need to set the parent_element_id, because we might have dragged the
+            # element over from another nestable element
+            Element.find_by(id: element_id).update_columns(
               parent_element_id: params[:parent_element_id],
-              position: idx + 1,
+              position: position,
             )
           end
-          @parent_element.try!(:touch)
+          # Need to manually touch the parent because Rails does not do it
+          # with the update_columns above
+          @parent_element&.touch
         end
       end
 
@@ -132,7 +135,7 @@ module Alchemy
         @source_element = Element.find(element_from_clipboard["id"])
         element = Element.copy(@source_element, {
           parent_element_id: create_element_params[:parent_element_id],
-          page_id: @page.id,
+          page_version_id: @page_version.id,
         })
         if element_from_clipboard["action"] == "cut"
           @cut_element_id = @source_element.id
@@ -155,7 +158,7 @@ module Alchemy
       end
 
       def create_element_params
-        params.require(:element).permit(:name, :page_id, :parent_element_id)
+        params.require(:element).permit(:name, :page_version_id, :parent_element_id)
       end
     end
   end

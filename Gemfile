@@ -13,7 +13,9 @@ gem "mysql2", "~> 0.5.1" if ENV["DB"] == "mysql"
 gem "pg", "~> 1.0" if ENV["DB"] == "postgresql"
 
 group :development, :test do
-  if ENV["TRAVIS"]
+  if ENV["GITHUB_ACTIONS"]
+    # Necessary because GH Actions gem cache does not have this "Bundled with Ruby" gem installed
+    gem "rexml", "~> 3.2.4"
     gem "sassc", "~> 2.4.0" # https://github.com/sass/sassc-ruby/issues/146
   else
     gem "launchy"
@@ -22,7 +24,7 @@ group :development, :test do
     gem "yard"
     gem "redcarpet"
     gem "pry-byebug"
-    gem "rubocop", "~> 1.1.0", require: false
+    gem "rubocop", "1.5.2", require: false
     gem "listen"
     gem "localeapp", "~> 3.0", require: false
     gem "dotenv", "~> 2.2"
@@ -30,5 +32,6 @@ group :development, :test do
     gem "active_record_query_trace", require: false
     gem "rack-mini-profiler", require: false
     gem "rufo", require: false
+    gem "brakeman", require: false
   end
 end

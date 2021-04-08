@@ -1,13 +1,10 @@
 # frozen_string_literal: true
 
-require "factory_bot"
-require "alchemy/test_support/factories/page_factory"
-
 FactoryBot.define do
   factory :alchemy_element, class: "Alchemy::Element" do
     name { "article" }
     autogenerate_contents { false }
-    association :page, factory: :alchemy_page
+    association :page_version, factory: :alchemy_page_version
 
     trait :fixed do
       fixed { true }
@@ -19,18 +16,12 @@ FactoryBot.define do
       name { "header" }
     end
 
-    trait :trashed do
-      after(:create) do |element|
-        element.update_column(:position, :null)
-      end
-    end
-
     trait :with_nestable_elements do
       name { "slider" }
     end
 
     trait :nested do
-      association :parent_element, factory: :alchemy_element, name: "slider"
+      parent_element { build(:alchemy_element, name: "slider", page_version: page_version) }
       name { "slide" }
     end
 

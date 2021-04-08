@@ -66,8 +66,8 @@ module Alchemy
     #
     # renders +app/views/alchemy/site_layouts/_default_site.html.erb+ for the site named "Default Site".
     #
-    def render_site_layout
-      render current_alchemy_site
+    def render_site_layout(&block)
+      render current_alchemy_site, &block
     rescue ActionView::MissingTemplate
       warning("Site layout for #{current_alchemy_site.try(:name)} not found. Please run `rails g alchemy:site_layouts`")
       ""
@@ -125,7 +125,7 @@ module Alchemy
 
       pages = options[:page].
         self_and_ancestors.contentpages.
-        accessible_by(current_ability, :see)
+        published
 
       if options.delete(:restricted_only)
         pages = pages.restricted

@@ -30,6 +30,17 @@ module Alchemy
         helper.render_site_layout
       end
 
+      context "when block is given" do
+        it "passes it on to the render method" do
+          expect(helper).to receive(:current_alchemy_site).and_return(default_site)
+          expect(helper)
+            .to receive(:render)
+            .with(default_site) { |&block| expect(block).to be }
+
+          helper.render_site_layout { true }
+        end
+      end
+
       context "with missing partial" do
         it "returns empty string and logges warning" do
           expect(helper).to receive(:current_alchemy_site).twice.and_return(default_site)
@@ -99,49 +110,73 @@ module Alchemy
         allow(helper).to receive(:current_ability).and_return(Alchemy::Permissions.new(user))
       end
 
+      subject do
+        helper.render_breadcrumb(page: page)
+      end
+
       it "should render a breadcrumb to current page" do
-        expect(helper.render_breadcrumb(page: page)).to have_selector(".active.last[contains('#{page.name}')]")
+        is_expected.to have_selector(".active.last[contains('#{page.name}')]")
       end
 
       context "with options[:separator] given" do
+        subject do
+          helper.render_breadcrumb(page: page, separator: "<span>###</span>")
+        end
+
         it "should render a breadcrumb with an alternative separator" do
-          expect(helper.render_breadcrumb(page: page, separator: "<span>###</span>")).to have_selector('span[contains("###")]')
+          is_expected.to have_selector('span[contains("###")]')
         end
       end
 
       context "with options[:reverse] set to true" do
+        subject do
+          helper.render_breadcrumb(page: page, reverse: true)
+        end
+
         it "should render a breadcrumb in reversed order" do
-          expect(helper.render_breadcrumb(page: page, reverse: true)).to have_selector('.active.first[contains("A Public Page")]')
+          is_expected.to have_selector('.active.first[contains("A Public Page")]')
         end
       end
 
       context "with options[:restricted_only] set to true" do
         let(:user) { build(:alchemy_dummy_user) }
 
+        subject do
+          helper.render_breadcrumb(page: page, restricted_only: true).strip
+        end
+
         it "should render a breadcrumb of restricted pages only" do
           page.update_columns(restricted: true, urlname: "a-restricted-public-page", name: "A restricted Public Page", title: "A restricted Public Page")
-          result = helper.render_breadcrumb(page: page, restricted_only: true).strip
-          expect(result).to have_selector("*[contains(\"#{page.name}\")]")
-          expect(result).to_not have_selector("*[contains(\"#{parent.name}\")]")
+          is_expected.to have_selector("*[contains(\"#{page.name}\")]")
+          is_expected.to_not have_selector("*[contains(\"#{parent.name}\")]")
         end
       end
 
-      it "should render a breadcrumb of unpublished pages" do
-        page.update_columns(public_on: nil, urlname: "a-unpublic-page", name: "A Unpublic Page", title: "A Unpublic Page")
-        expect(helper.render_breadcrumb(page: page)).to match(/A Unpublic Page/)
+      it "should not include unpublished pages" do
+        page.update_columns(urlname: "a-unpublic-page", name: "A Unpublic Page", title: "A Unpublic Page")
+        page.public_version.destroy
+        is_expected.to_not match(/A Unpublic Page/)
       end
 
       context "with options[:without]" do
+        subject do
+          helper.render_breadcrumb(page: page, without: page)
+        end
+
         it "should render a breadcrumb without this page" do
           page.update_columns(urlname: "not-me", name: "Not Me", title: "Not Me")
-          expect(helper.render_breadcrumb(page: page, without: page)).not_to match(/Not Me/)
+          is_expected.not_to match(/Not Me/)
         end
       end
 
       context "with options[:without] as array" do
+        subject do
+          helper.render_breadcrumb(page: page, without: [page])
+        end
+
         it "should render a breadcrumb without these pages." do
           page.update_columns(urlname: "not-me", name: "Not Me", title: "Not Me")
-          expect(helper.render_breadcrumb(page: page, without: [page])).not_to match(/Not Me/)
+          is_expected.not_to match(/Not Me/)
         end
       end
     end

@@ -35,7 +35,6 @@ Alchemy::Engine.routes.draw do
         post :unlock
         post :publish
         post :fold
-        post :visit
         get :configure
         get :preview
         get :info
@@ -50,7 +49,6 @@ Alchemy::Engine.routes.draw do
       member do
         patch :publish
         post :fold
-        delete :trash
       end
     end
 
@@ -101,13 +99,6 @@ Alchemy::Engine.routes.draw do
         delete :clear
         delete :remove
         post :insert
-      end
-    end
-
-    resource :trash, only: :index, controller: "trash" do
-      collection do
-        get :index
-        delete :clear
       end
     end
 

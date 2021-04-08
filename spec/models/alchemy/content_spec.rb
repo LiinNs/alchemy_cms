@@ -263,6 +263,42 @@ module Alchemy
       end
     end
 
+    describe "#deprecated?" do
+      let(:content) { build_stubbed(:alchemy_content) }
+
+      subject { content.deprecated? }
+
+      context "not defined as deprecated" do
+        it "returns false" do
+          expect(content.deprecated?).to be false
+        end
+      end
+
+      context "defined as deprecated" do
+        before do
+          expect(content).to receive(:definition).at_least(:once).and_return({
+            "deprecated" => true,
+          })
+        end
+
+        it "returns true" do
+          expect(content.deprecated?).to be true
+        end
+      end
+
+      context "defined as deprecated per String" do
+        before do
+          expect(content).to receive(:definition).at_least(:once).and_return({
+            "deprecated" => "This content is deprecated",
+          })
+        end
+
+        it "returns true" do
+          expect(content.deprecated?).to be true
+        end
+      end
+    end
+
     describe "#preview_content?" do
       let(:content) { build_stubbed(:alchemy_content) }
 
@@ -473,12 +509,6 @@ module Alchemy
         expect(page.restricted?).to be true
         expect(content.page).to eq page
         expect(content.restricted?).to be true
-      end
-
-      it "delegates trashed? to element" do
-        element.update!(position: nil)
-        expect(element.trashed?).to be true
-        expect(content.trashed?).to be true
       end
 
       it "delegates public? to element" do

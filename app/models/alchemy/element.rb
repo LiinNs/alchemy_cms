@@ -7,7 +7,7 @@
 #  id                :integer          not null, primary key
 #  name              :string
 #  position          :integer
-#  page_id           :integer          not null
+#  page_version_id   :integer          not null
 #  public            :boolean          default(TRUE)
 #  fixed             :boolean          default(FALSE)
 #  folded            :boolean          default(FALSE)
@@ -19,6 +19,11 @@
 #  cached_tag_list   :text
 #  parent_element_id :integer
 #
+
+require_dependency "alchemy/element/definitions"
+require_dependency "alchemy/element/element_contents"
+require_dependency "alchemy/element/element_essences"
+require_dependency "alchemy/element/presenters"
 
 module Alchemy
   class Element < BaseRecord
@@ -37,6 +42,7 @@ module Alchemy
       "taggable",
       "compact",
       "message",
+      "deprecated",
     ].freeze
 
     SKIPPED_ATTRIBUTES_ON_COPY = [
@@ -50,22 +56,22 @@ module Alchemy
       "updater_id",
     ].freeze
 
-    # All Elements that share the same page id and parent element id and are fixed or not are considered a list.
+    # All Elements that share the same page version and parent element and are fixed or not are considered a list.
     #
-    # If parent element id is nil (typical case for a simple page),
+    # If parent_element_id is nil (typical case for a simple page),
     # then all elements on that page are still in one list,
     # because acts_as_list correctly creates this statement:
     #
-    #   WHERE page_id = 1 and fixed = FALSE AND parent_element_id = NULL
+    #   WHERE page_version_id = 1 and fixed = FALSE AND parent_element_id = NULL
     #
-    acts_as_list scope: [:page_id, :fixed, :parent_element_id]
+    acts_as_list scope: [:page_version_id, :fixed, :parent_element_id]
 
     stampable stamper_class_name: Alchemy.user_class_name
 
     has_many :contents, dependent: :destroy, inverse_of: :element
 
     has_many :all_nested_elements,
-      -> { order(:position).not_trashed },
+      -> { order(:position) },
       class_name: "Alchemy::Element",
       foreign_key: :parent_element_id,
       dependent: :destroy
@@ -77,7 +83,8 @@ module Alchemy
       dependent: :destroy,
       inverse_of: :parent_element
 
-    belongs_to :page, touch: true, inverse_of: :elements
+    belongs_to :page_version, touch: true, inverse_of: :elements
+    has_one :page, through: :page_version
 
     # A nested element belongs to a parent element.
     belongs_to :parent_element,
@@ -100,11 +107,10 @@ module Alchemy
 
     after_update :touch_touchable_pages
 
-    scope :trashed, -> { where(position: nil).order("updated_at DESC") }
-    scope :not_trashed, -> { where.not(position: nil) }
     scope :published, -> { where(public: true) }
+    scope :hidden, -> { where(public: false) }
     scope :not_restricted, -> { joins(:page).merge(Page.not_restricted) }
-    scope :available, -> { published.not_trashed }
+    scope :available, -> { published }
     scope :named, ->(names) { where(name: names) }
     scope :excluded, ->(names) { where.not(name: names) }
     scope :fixed, -> { where(fixed: true) }
@@ -117,10 +123,10 @@ module Alchemy
     delegate :restricted?, to: :page, allow_nil: true
 
     # Concerns
-    include Alchemy::Element::Definitions
-    include Alchemy::Element::ElementContents
-    include Alchemy::Element::ElementEssences
-    include Alchemy::Element::Presenters
+    include Definitions
+    include ElementContents
+    include ElementEssences
+    include Presenters
 
     # class methods
     class << self
@@ -221,17 +227,6 @@ module Alchemy
       end
     end
 
-    # Trashing an element means nullifying its position, folding and unpublishing it.
-    def trash!
-      self.public = false
-      self.folded = true
-      remove_from_list
-    end
-
-    def trashed?
-      position.nil?
-    end
-
     # Returns true if the definition of this element has a taggable true value.
     def taggable?
       definition["taggable"] == true
@@ -245,6 +240,38 @@ module Alchemy
     # Defined as compact element?
     def compact?
       definition["compact"] == true
+    end
+
+    # Defined as deprecated element?
+    #
+    # You can either set true or a String on your elements definition.
+    #
+    # == Passing true
+    #
+    #     - name: old_element
+    #       deprecated: true
+    #
+    # The deprecation notice can be translated. Either as global notice for all deprecated elements.
+    #
+    #     en:
+    #       alchemy:
+    #         element_deprecation_notice: Foo baz widget is deprecated
+    #
+    # Or add a translation to your locale file for a per element notice.
+    #
+    #     en:
+    #       alchemy:
+    #         element_deprecation_notices:
+    #           old_element: Foo baz widget is deprecated
+    #
+    # == Pass a String
+    #
+    #     - name: old_element
+    #       deprecated: This element will be removed soon.
+    #
+    # @return Boolean
+    def deprecated?
+      !!definition["deprecated"]
     end
 
     # The element's view partial is dependent from its name
@@ -289,7 +316,7 @@ module Alchemy
       nested_elements.map do |nested_element|
         Element.copy(nested_element, {
           parent_element_id: target_element.id,
-          page_id: target_element.page_id,
+          page_version_id: target_element.page_version_id,
         })
       end
     end
@@ -299,7 +326,7 @@ module Alchemy
     def generate_nested_elements
       definition.fetch("autogenerate", []).each do |nestable_element|
         if nestable_elements.include?(nestable_element)
-          Element.create(page: page, parent_element_id: id, name: nestable_element)
+          Element.create(page_version: page_version, parent_element_id: id, name: nestable_element)
         else
           log_warning("Element '#{nestable_element}' not a nestable element for '#{name}'. Skipping!")
         end

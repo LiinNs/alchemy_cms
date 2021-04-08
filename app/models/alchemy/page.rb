@@ -35,6 +35,12 @@
 #  locked_at        :datetime
 #
 
+require_dependency "alchemy/page/fixed_attributes"
+require_dependency "alchemy/page/page_scopes"
+require_dependency "alchemy/page/page_natures"
+require_dependency "alchemy/page/page_naming"
+require_dependency "alchemy/page/page_elements"
+
 module Alchemy
   class Page < BaseRecord
     include Alchemy::Hints
@@ -109,6 +115,9 @@ module Alchemy
     has_many :folded_pages
     has_many :legacy_urls, class_name: "Alchemy::LegacyPageUrl"
     has_many :nodes, class_name: "Alchemy::Node", inverse_of: :page
+    has_many :versions, class_name: "Alchemy::PageVersion", inverse_of: :page, dependent: :destroy
+    has_one :draft_version, -> { drafts }, class_name: "Alchemy::PageVersion"
+    has_one :public_version, -> { published }, class_name: "Alchemy::PageVersion"
 
     before_validation :set_language,
       if: -> { language.nil? }
@@ -116,6 +125,8 @@ module Alchemy
     validates_presence_of :page_layout
     validates_format_of :page_layout, with: /\A[a-z0-9_-]+\z/, unless: -> { page_layout.blank? }
     validates_presence_of :parent, unless: -> { layoutpage? || language_root? }
+
+    before_create -> { versions.build }
 
     before_save :set_language_code,
       if: -> { language.present? }
@@ -126,9 +137,6 @@ module Alchemy
     before_save :inherit_restricted_status,
       if: -> { parent && parent.restricted? }
 
-    before_save :set_published_at,
-      if: -> { public_on.present? && published_at.nil? }
-
     before_save :set_fixed_attributes,
       if: -> { fixed_attributes.any? }
 
@@ -138,13 +146,21 @@ module Alchemy
     after_update -> { nodes.update_all(updated_at: Time.current) }
 
     # Concerns
-    include Alchemy::Page::PageScopes
-    include Alchemy::Page::PageNatures
-    include Alchemy::Page::PageNaming
-    include Alchemy::Page::PageElements
+    include PageScopes
+    include PageNatures
+    include PageNaming
+    include PageElements
 
     # site_name accessor
     delegate :name, to: :site, prefix: true, allow_nil: true
+
+    # Old public_on and public_until attributes for historical reasons
+    #
+    # These attributes now exist on the page versions
+    #
+    attr_readonly :legacy_public_on, :legacy_public_until
+    deprecate :legacy_public_on, deprecator: Alchemy::Deprecation
+    deprecate :legacy_public_until, deprecator: Alchemy::Deprecation
 
     # Class methods
     #
@@ -291,7 +307,9 @@ module Alchemy
     # Instance methods
     #
 
-    # Returns elements from page.
+    # Returns elements from pages public version.
+    #
+    # You can pass another page_version to load elements from in the options.
     #
     # @option options [Array<String>|String] :only
     #   Returns only elements with given names
@@ -310,11 +328,14 @@ module Alchemy
     # @option options [Class] :finder (Alchemy::ElementsFinder)
     #   A class that will return elements from page.
     #   Use this for your custom element loading logic.
+    # @option options [Alchemy::PageVersion] :page_version
+    #   A page version to load elements from.
+    #   Uses the pages public_version by default.
     #
     # @return [ActiveRecord::Relation]
     def find_elements(options = {})
       finder = options[:finder] || Alchemy::ElementsFinder.new(options)
-      finder.elements(page: self)
+      finder.elements(page_version: options[:page_version] || public_version)
     end
 
     # = The url_path for this page
@@ -423,21 +444,35 @@ module Alchemy
       end
     end
 
-    # Publishes the page.
+    # Creates a public version of the page.
     #
-    # Sets +public_on+ and the +published_at+ value to current time
-    # and resets +public_until+ to nil
+    # Sets the +published_at+ value to current time
     #
     # The +published_at+ attribute is used as +cache_key+.
     #
-    def publish!
-      current_time = Time.current
-      update_columns(
-        published_at: current_time,
-        public_on: already_public_for?(current_time) ? public_on : current_time,
-        public_until: still_public_for?(current_time) ? public_until : nil,
-      )
+    def publish!(current_time = Time.current)
+      update_columns(published_at: current_time)
+      Publisher.new(self).publish!(public_on: current_time)
     end
+
+    # Sets the public_on date on the published version
+    #
+    # Builds a new version if none exists yet.
+    # Destroys public version if empty time is set
+    #
+    def public_on=(time)
+      if public_version && time.blank?
+        public_version.destroy!
+        # Need to reset the public version on the instance so we do not need to reload
+        self.public_version = nil
+      elsif public_version
+        public_version.public_on = time
+      else
+        versions.build(public_on: time)
+      end
+    end
+
+    delegate :public_until=, to: :public_version, allow_nil: true
 
     # Updates an Alchemy::Page based on a new ordering to be applied to it
     #
@@ -460,7 +495,7 @@ module Alchemy
 
     # Holds an instance of +FixedAttributes+
     def fixed_attributes
-      @_fixed_attributes ||= Alchemy::Page::FixedAttributes.new(self)
+      @_fixed_attributes ||= FixedAttributes.new(self)
     end
 
     # True if given attribute name is defined as fixed
@@ -479,12 +514,12 @@ module Alchemy
       (editor_roles & user.alchemy_roles).any?
     end
 
-    # Returns the value of +public_on+ attribute
+    # Returns the value of +public_on+ attribute from public version
     #
     # If it's a fixed attribute then the fixed value is returned instead
     #
     def public_on
-      attribute_fixed?(:public_on) ? fixed_attributes[:public_on] : self[:public_on]
+      attribute_fixed?(:public_on) ? fixed_attributes[:public_on] : public_version&.public_on
     end
 
     # Returns the value of +public_until+ attribute
@@ -492,7 +527,7 @@ module Alchemy
     # If it's a fixed attribute then the fixed value is returned instead
     #
     def public_until
-      attribute_fixed?(:public_until) ? fixed_attributes[:public_until] : self[:public_until]
+      attribute_fixed?(:public_until) ? fixed_attributes[:public_until] : public_version&.public_until
     end
 
     # Returns the name of the creator of this page.
@@ -555,10 +590,6 @@ module Alchemy
     # Stores the old urlname in a LegacyPageUrl
     def create_legacy_url
       legacy_urls.find_or_create_by(urlname: urlname_before_last_save)
-    end
-
-    def set_published_at
-      self.published_at = Time.current
     end
   end
 end

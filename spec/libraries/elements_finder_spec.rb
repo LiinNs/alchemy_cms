@@ -9,35 +9,34 @@ RSpec.describe Alchemy::ElementsFinder do
   describe "#elements" do
     subject { finder.elements }
 
-    let(:page) { create(:alchemy_page, :public) }
-    let!(:visible_element) { create(:alchemy_element, public: true, page: page) }
-    let!(:hidden_element) { create(:alchemy_element, public: false, page: page) }
+    let(:page_version) { create(:alchemy_page_version, :published) }
+    let!(:visible_element) { create(:alchemy_element, page_version: page_version) }
+    let!(:hidden_element) { create(:alchemy_element, public: false, page_version: page_version) }
 
-    context "without page given" do
+    context "without page_version given" do
       it do
         expect { subject }.to raise_error(ArgumentError)
       end
     end
 
-    context "with page object given" do
-      subject { finder.elements(page: page) }
+    context "with page_version object given" do
+      subject { finder.elements(page_version: page_version).to_a }
 
-      it "returns all public elements from page" do
+      it "returns all public elements from page_version" do
         is_expected.to eq([visible_element])
-      end
-
-      it "does not return trashed elements" do
-        visible_element.remove_from_list
-        is_expected.to eq([])
       end
 
       context "with multiple ordered elements" do
         let!(:element_2) do
-          create(:alchemy_element, public: true, page: page).tap { |el| el.update_columns(position: 3) }
+          create(:alchemy_element, page_version: page_version).tap do |el|
+            el.update_columns(position: 3)
+          end
         end
 
         let!(:element_3) do
-          create(:alchemy_element, public: true, page: page).tap { |el| el.update_columns(position: 2) }
+          create(:alchemy_element, page_version: page_version).tap do |el|
+            el.update_columns(position: 2)
+          end
         end
 
         it "returns elements ordered by position" do
@@ -46,7 +45,7 @@ RSpec.describe Alchemy::ElementsFinder do
       end
 
       context "with fixed elements present" do
-        let!(:fixed_element) { create(:alchemy_element, :fixed, page: page) }
+        let!(:fixed_element) { create(:alchemy_element, :fixed, page_version: page_version) }
 
         it "does not include fixed elements" do
           is_expected.to_not include(fixed_element)
@@ -64,7 +63,7 @@ RSpec.describe Alchemy::ElementsFinder do
       end
 
       context "with nested elements present" do
-        let!(:nested_element) { create(:alchemy_element, :nested, page: page) }
+        let!(:nested_element) { create(:alchemy_element, :nested, page_version: page_version) }
 
         it "does not include nested elements" do
           is_expected.to_not include(nested_element)
@@ -96,8 +95,8 @@ RSpec.describe Alchemy::ElementsFinder do
           { offset: 2 }
         end
 
-        let!(:visible_element_2) { create(:alchemy_element, public: true, page: page) }
-        let!(:visible_element_3) { create(:alchemy_element, public: true, page: page) }
+        let!(:visible_element_2) { create(:alchemy_element, page_version: page_version) }
+        let!(:visible_element_3) { create(:alchemy_element, page_version: page_version) }
 
         it "returns elements beginning from that offset" do
           is_expected.to eq([visible_element_3])
@@ -109,7 +108,7 @@ RSpec.describe Alchemy::ElementsFinder do
           { count: 1 }
         end
 
-        let!(:visible_element_2) { create(:alchemy_element, public: true, page: page) }
+        let!(:visible_element_2) { create(:alchemy_element, page_version: page_version) }
 
         it "returns elements beginning from that offset" do
           is_expected.to eq([visible_element])
@@ -121,7 +120,7 @@ RSpec.describe Alchemy::ElementsFinder do
           { reverse: true }
         end
 
-        let!(:visible_element_2) { create(:alchemy_element, public: true, page: page) }
+        let!(:visible_element_2) { create(:alchemy_element, page_version: page_version) }
 
         it "returns elements in reverse order" do
           is_expected.to eq([visible_element_2, visible_element])
@@ -133,103 +132,10 @@ RSpec.describe Alchemy::ElementsFinder do
           { random: true }
         end
 
-        let(:random_function) do
-          case ActiveRecord::Base.connection_config[:adapter]
-          when "postgresql", "sqlite3"
-            "RANDOM()"
-          else
-            "RAND()"
-          end
-        end
-
         it "returns elements in random order" do
-          expect_any_instance_of(ActiveRecord::Relation).to \
-            receive(:reorder).with(random_function).and_call_original
+          expect_any_instance_of(Alchemy::ElementsRepository).to \
+            receive(:random).and_call_original
           subject
-        end
-      end
-    end
-
-    context "with page layout name given as options[:from_page]" do
-      subject { finder.elements(page: "standard") }
-
-      let(:page) { create(:alchemy_page, :public, page_layout: "standard") }
-      let!(:visible_element) { create(:alchemy_element, public: true, page: page) }
-      let!(:hidden_element) { create(:alchemy_element, public: false, page: page) }
-
-      it "returns all public elements from page with given page layout" do
-        is_expected.to eq([visible_element])
-      end
-
-      context "that is not found" do
-        subject { finder.elements(page: "foobaz") }
-
-        it "returns empty active record relation" do
-          is_expected.to eq(Alchemy::Element.none)
-        end
-      end
-    end
-
-    context "with fallback options given" do
-      subject { finder.elements(page: page) }
-
-      let(:options) do
-        {
-          fallback: {
-            for: "download",
-            from: page_2,
-          },
-        }
-      end
-
-      context "and no element from that kind on current page" do
-        let(:page) { create(:alchemy_page, :public, page_layout: "standard") }
-
-        context "but element of that kind on fallback page" do
-          let(:page_2) { create(:alchemy_page, :public, page_layout: "standard") }
-          let!(:visible_element_2) { create(:alchemy_element, name: "download", public: true, page: page_2) }
-
-          it "loads elements from fallback page" do
-            is_expected.to eq([visible_element_2])
-          end
-        end
-
-        context "with fallback element defined" do
-          let(:options) do
-            {
-              fallback: {
-                for: "download",
-                with: "header",
-                from: page_2,
-              },
-            }
-          end
-
-          let(:page_2) { create(:alchemy_page, :public, page_layout: "standard") }
-          let!(:visible_element_2) { create(:alchemy_element, name: "header", public: true, page: page_2) }
-
-          it "loads fallback element from fallback page" do
-            is_expected.to eq([visible_element_2])
-          end
-        end
-
-        context "with fallback page defined as pagelayout name" do
-          let(:options) do
-            {
-              fallback: {
-                for: "download",
-                with: "text",
-                from: "everything",
-              },
-            }
-          end
-
-          let(:page_2) { create(:alchemy_page, :public, page_layout: "everything") }
-          let!(:visible_element_2) { create(:alchemy_element, name: "text", public: true, page: page_2) }
-
-          it "loads fallback element from fallback page" do
-            is_expected.to eq([visible_element_2])
-          end
         end
       end
     end

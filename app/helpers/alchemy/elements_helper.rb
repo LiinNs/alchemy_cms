@@ -25,24 +25,8 @@ module Alchemy
     # === Render elements from global page:
     #
     #   <footer>
-    #     <%= render_elements from_page: 'footer' %>
+    #     <%= render_elements from_page: Alchemy::Page.find_by(page_layout: 'footer') %>
     #   </footer>
-    #
-    # === Fallback to elements from global page:
-    #
-    # You can use the fallback option as an override for elements that are stored on another page.
-    # So you can take elements from a global page and only if the user adds an element on current page the
-    # local one gets rendered.
-    #
-    # 1. You have to pass the the name of the element the fallback is for as <tt>for</tt> key.
-    # 2. You have to pass a <tt>page_layout</tt> name or {Alchemy::Page} from where the fallback elements is taken from as <tt>from</tt> key.
-    # 3. You can pass the name of element to fallback with as <tt>with</tt> key. This is optional (the element name from the <tt>for</tt> key is taken as default).
-    #
-    #   <%= render_elements(fallback: {
-    #     for: 'contact_teaser',
-    #     from: 'sidebar',
-    #     with: 'contact_teaser'
-    #   }) %>
     #
     # === Custom elements finder:
     #
@@ -66,8 +50,8 @@ module Alchemy
     #     <%= render_elements finder: MyCustomNewsArchive.new %>
     #   </div>
     #
-    # @option options [Alchemy::Page|String] :from_page (@page)
-    #   The page the elements are rendered from. You can pass a page_layout String or a {Alchemy::Page} object.
+    # @option options [Alchemy::Page] :from_page (@page)
+    #   The page the elements are rendered from.
     # @option options [Array<String>|String] :only
     #   A list of element names only to be rendered.
     # @option options [Array<String>|String] :except
@@ -76,8 +60,6 @@ module Alchemy
     #   The amount of elements to be rendered (begins with first element found)
     # @option options [Number] :offset
     #   The offset to begin loading elements from
-    # @option options [Hash] :fallback
-    #   Define elements that are rendered from another page.
     # @option options [Boolean] :random (false)
     #   Randomize the output of elements
     # @option options [Boolean] :reverse (false)
@@ -95,7 +77,14 @@ module Alchemy
       }.update(options)
 
       finder = options[:finder] || Alchemy::ElementsFinder.new(options)
-      elements = finder.elements(page: options[:from_page])
+
+      page_version = if @preview_mode
+          options[:from_page]&.draft_version
+        else
+          options[:from_page]&.public_version
+        end
+
+      elements = finder.elements(page_version: page_version)
 
       buff = []
       elements.each_with_index do |element, i|
@@ -151,7 +140,7 @@ module Alchemy
     def render_element(element, options = {}, counter = 1)
       if element.nil?
         warning("Element is nil")
-        render "alchemy/elements/view_not_found", {name: "nil"}
+        render "alchemy/elements/view_not_found", { name: "nil" }
         return
       end
 

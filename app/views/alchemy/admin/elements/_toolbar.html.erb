@@ -1,4 +1,4 @@
-<% remarkable_type = element.class.name.demodulize.underscore.pluralize %>
+<% remarkable_type = "elements" %>
 <div class="element-toolbar">
   <span class="element_tools">
     <div class="button_with_label">
@@ -22,14 +22,13 @@
       <label><%= Alchemy.t(:cut_element) %></label>
     </div>
     <div class="button_with_label">
-      <%= link_to(
+      <%= link_to_confirm_dialog(
         render_icon('trash-alt'),
-        alchemy.trash_admin_element_path(element),
-        method: :delete,
-        class: "icon_button",
-        remote: true
+        Alchemy.t(:confirm_to_delete_element),
+        alchemy.admin_element_path(element),
+        class: "icon_button"
       ) -%>
-      <label><%= Alchemy.t("trash element") %></label>
+      <label><%= Alchemy.t("Delete element") %></label>
     </div>
     <div class="button_with_label publish-element-button">
       <%= link_to(

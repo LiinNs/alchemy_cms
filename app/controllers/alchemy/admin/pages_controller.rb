@@ -33,6 +33,8 @@ module Alchemy
 
       before_action :set_view, only: [:index]
 
+      before_action :set_page_version, only: [:show, :edit]
+
       def index
         @query = @current_language.pages.contentpages.ransack(search_filter_params[:q])
 
@@ -118,7 +120,6 @@ module Alchemy
 
       # Set page configuration like page names, meta tags and states.
       def configure
-        @page_layouts = PageLayout.layouts_with_own_for_select(@page.page_layout, @current_language.id, @page.layoutpage?)
       end
 
       # Updates page
@@ -189,15 +190,6 @@ module Alchemy
             redirect_to params[:redirect_to].blank? ? admin_pages_path : params[:redirect_to]
           }
         end
-      end
-
-      def visit
-        @page.unlock!
-        redirect_to show_page_url(
-          urlname: @page.urlname,
-          locale: prefix_locale? ? @page.language_code : nil,
-          host: @page.site.host == "*" ? request.host : @page.site.host,
-        )
       end
 
       # Sets the page public and updates the published_at attribute that is used as cache_key
@@ -401,6 +393,10 @@ module Alchemy
 
       def set_root_page
         @page_root = @current_language.root_page
+      end
+
+      def set_page_version
+        @page_version = @page.draft_version
       end
 
       def serialized_page_tree

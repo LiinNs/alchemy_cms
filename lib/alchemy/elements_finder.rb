@@ -3,7 +3,7 @@
 require "alchemy/logger"
 
 module Alchemy
-  # Loads elements from given page
+  # Loads elements from given page version.
   #
   # Used by {Alchemy::Page#find_elements} and {Alchemy::ElementsHelper#render_elements} helper.
   #
@@ -26,28 +26,22 @@ module Alchemy
     #   Randomize the output of elements
     # @option options [Boolean] :reverse (false)
     #   Reverse the load order
-    # @option options [Hash] :fallback
-    #   Define elements that are loaded from another page if no element was found on given page.
     def initialize(options = {})
       @options = options
     end
 
-    # @param page [Alchemy::Page|String]
-    #   The page the elements are loaded from. You can pass a page_layout String or a {Alchemy::Page} object.
-    # @return [ActiveRecord::Relation]
-    def elements(page:)
-      elements = find_elements(page)
-
-      if fallback_required?(elements)
-        elements = elements.merge(fallback_elements)
-      end
+    # @param page [Alchemy::PageVersion]
+    #   The page version the elements are loaded from.
+    # @return [Alchemy::ElementsRepository]
+    def elements(page_version:)
+      elements = find_elements(page_version)
 
       if options[:reverse]
-        elements = elements.reverse_order
+        elements = elements.reverse
       end
 
       if options[:random]
-        elements = elements.reorder(Arel.sql(random_function))
+        elements = elements.random
       end
 
       elements.offset(options[:offset]).limit(options[:count])
@@ -55,17 +49,14 @@ module Alchemy
 
     private
 
-    attr_reader :page, :options
+    attr_reader :options
 
-    def find_elements(page_or_layout)
-      @page = get_page(page_or_layout)
-      return Alchemy::Element.none unless page
+    def find_elements(page_version)
+      return Alchemy::ElementsRepository.none unless page_version
 
-      if options[:fixed]
-        elements = page.fixed_elements
-      else
-        elements = page.elements
-      end
+      elements = Alchemy::ElementsRepository.new(page_version.elements.available)
+      elements = elements.not_nested
+      elements = options[:fixed] ? elements.fixed : elements.unfixed
 
       if options[:only]
         elements = elements.named(options[:only])
@@ -76,39 +67,6 @@ module Alchemy
       end
 
       elements
-    end
-
-    def get_page(page_or_layout)
-      case page_or_layout
-      when Alchemy::Page
-        page_or_layout
-      when String
-        Alchemy::Page.find_by(
-          language: Alchemy::Language.current,
-          page_layout: page_or_layout,
-          restricted: false,
-        )
-      end
-    end
-
-    def fallback_required?(elements)
-      options[:fallback] && elements
-        .where(Alchemy::Element.table_name => {name: options[:fallback][:for]})
-        .none?
-    end
-
-    def fallback_elements
-      find_elements(options[:fallback][:from])
-        .named(options[:fallback][:with] || options[:fallback][:for])
-    end
-
-    def random_function
-      case ActiveRecord::Base.connection_config[:adapter]
-      when "postgresql", "sqlite3"
-        "RANDOM()"
-      else
-        "RAND()"
-      end
     end
   end
 end
