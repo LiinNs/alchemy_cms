@@ -90,6 +90,18 @@ module Alchemy
             page.save!
           }.to change { page.versions.length }.by(1)
         end
+
+        context "if there is already a version" do
+          let(:page) do
+            build(:alchemy_page, language: language, parent: language_root).tap do |page|
+              page.versions.build
+            end
+          end
+
+          it "builds no version" do
+            expect { page.save! }.to_not change { page.versions.length }
+          end
+        end
       end
 
       context "before_save" do
@@ -352,8 +364,9 @@ module Alchemy
         expect(subject.name).to eq("#{page.name} (Copy)")
       end
 
-      it "the copy should have a draft version" do
-        expect(subject.draft_version).to_not be_nil
+      it "the copy should have one draft version" do
+        expect(subject.versions.length).to eq(1)
+        expect(subject.draft_version).to be
       end
 
       context "a public page" do
@@ -426,6 +439,19 @@ module Alchemy
 
         it "should take this name" do
           expect(subject.name).to eq("Different name")
+        end
+      end
+
+      context "with exceptions during copy" do
+        before do
+          expect(Page).to receive(:copy_elements) { raise "boom" }
+        end
+
+        it "rolls back all changes" do
+          page
+          expect {
+            expect { Page.copy(page, { name: "Different name" }) }.to raise_error("boom")
+          }.to_not change(Alchemy::Page, :count)
         end
       end
     end
@@ -1303,6 +1329,15 @@ module Alchemy
           expect(page.versions.last).to be
           expect(page.versions.last.public_on).to be_within(1.second).of(time)
         end
+
+        context "and the time is empty string" do
+          let(:time) { "" }
+          let!(:page) { create(:alchemy_page) }
+
+          it "does not build a new version" do
+            expect { subject }.to_not change(page.versions, :length)
+          end
+        end
       end
     end
 
@@ -1413,9 +1448,10 @@ module Alchemy
         allow(Time).to receive(:current).and_return(current_time)
       end
 
-      it "calls the page publisher" do
-        expect_any_instance_of(Alchemy::Page::Publisher).to receive(:publish!).with(public_on: current_time)
-        page.publish!
+      it "enqueues publish page job" do
+        expect {
+          page.publish!
+        }.to have_enqueued_job(Alchemy::PublishPageJob)
       end
 
       it "sets published_at" do
@@ -1893,6 +1929,62 @@ module Alchemy
           nested_folded_rtf_content = nested_folded_element.contents.essence_richtexts.first
 
           expect(richtext_contents_ids).to_not include(nested_folded_rtf_content.id)
+        end
+      end
+    end
+
+    describe "#richtext_ingredients_ids" do
+      let!(:page) { create(:alchemy_page) }
+
+      let!(:expanded_element) do
+        create :alchemy_element, :with_ingredients,
+          name: "element_with_ingredients",
+          page_version: page.draft_version,
+          folded: false
+      end
+
+      let!(:folded_element) do
+        create :alchemy_element, :with_ingredients,
+          name: "element_with_ingredients",
+          page_version: page.draft_version,
+          folded: true
+      end
+
+      subject(:richtext_ingredients_ids) { page.richtext_ingredients_ids }
+
+      it "returns ingredient ids for all expanded elements that have tinymce enabled" do
+        expanded_rtf_ingredients = expanded_element.ingredients.richtexts
+        expect(richtext_ingredients_ids).to eq(expanded_rtf_ingredients.pluck(:id))
+        folded_rtf_ingredient = folded_element.ingredients.richtexts.first
+        expect(richtext_ingredients_ids).to_not include(folded_rtf_ingredient.id)
+      end
+
+      context "with nested elements" do
+        let!(:nested_expanded_element) do
+          create :alchemy_element, :with_ingredients,
+            name: "element_with_ingredients",
+            page_version: page.draft_version,
+            parent_element: expanded_element,
+            folded: false
+        end
+
+        let!(:nested_folded_element) do
+          create :alchemy_element, :with_ingredients,
+            name: "element_with_ingredients",
+            page_version: page.draft_version,
+            parent_element: folded_element,
+            folded: true
+        end
+
+        it "returns ingredient ids for all expanded nested elements that have tinymce enabled" do
+          expanded_rtf_ingredients = expanded_element.ingredients.richtexts
+          nested_expanded_rtf_ingredients = nested_expanded_element.ingredients.richtexts
+          rtf_ingredient_ids = expanded_rtf_ingredients.pluck(:id) + nested_expanded_rtf_ingredients.pluck(:id)
+          expect(richtext_ingredients_ids.sort).to eq(rtf_ingredient_ids)
+
+          nested_folded_rtf_ingredient = nested_folded_element.ingredients.richtexts.first
+
+          expect(richtext_ingredients_ids).to_not include(nested_folded_rtf_ingredient.id)
         end
       end
     end

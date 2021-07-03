@@ -23,7 +23,7 @@ module Alchemy
       if params[:named].present?
         @elements = @elements.named(params[:named])
       end
-      @elements = @elements.includes(*element_includes)
+      @elements = @elements.includes(*element_includes).order(:position)
 
       render json: @elements, adapter: :json, root: "elements"
     end
@@ -46,6 +46,7 @@ module Alchemy
               contents: {
                 essence: :ingredient_association,
               },
+              ingredients: :related_object,
             },
             :tags,
           ],
@@ -54,6 +55,7 @@ module Alchemy
           contents: {
             essence: :ingredient_association,
           },
+          ingredients: :related_object,
         },
         :tags,
       ]

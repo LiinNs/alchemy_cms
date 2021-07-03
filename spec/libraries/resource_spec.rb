@@ -143,19 +143,19 @@ module Alchemy
     end
 
     describe "#namespaced_resource_name" do
-      it "returns resource_name with namespace (namespace_party for Namespace::Party), i.e. for use in forms" do
+      it "returns resource_name symbol with namespace (namespace_party for Namespace::Party), i.e. for use in forms" do
         namespaced_resource = Resource.new("admin/namespace/parties")
-        expect(namespaced_resource.namespaced_resource_name).to eq("namespace_party")
+        expect(namespaced_resource.namespaced_resource_name).to eq(:namespace_party)
       end
 
-      it "equals resource_name if resource not namespaced" do
+      it "equals resource_name symbol if resource not namespaced" do
         namespaced_resource = Resource.new("admin/parties")
-        expect(namespaced_resource.namespaced_resource_name).to eq("party")
+        expect(namespaced_resource.namespaced_resource_name).to eq(:party)
       end
 
       it "doesn't include the engine's name" do
         namespaced_resource = Resource.new("admin/party_engine/namespace/parties", module_definition)
-        expect(namespaced_resource.namespaced_resource_name).to eq("namespace_party")
+        expect(namespaced_resource.namespaced_resource_name).to eq(:namespace_party)
       end
     end
 
@@ -168,7 +168,7 @@ module Alchemy
 
     describe "#namespace_for_scope" do
       it "returns a scope for use in url_for based path helpers" do
-        expect(resource.namespace_for_scope).to eq(%w(admin))
+        expect(resource.namespace_for_scope).to eq(%i(admin))
       end
     end
 
@@ -358,6 +358,26 @@ module Alchemy
           relation = resource.resource_relations[:location_id]
           expect(relation.keys).to include(:name)
           expect(relation[:name]).to eq("location")
+        end
+
+        it "stores an ActiveRecord::Relation scope for all records in a collection key" do
+          expect(Location).to receive(:all).and_call_original
+          expect(resource.resource_relations[:location_id][:collection]).to be_a(ActiveRecord::Relation)
+        end
+
+        context "when collection gets passed with a specific ActiveRecord::Relation" do
+          before do
+            allow(Event).to receive(:alchemy_resource_relations) do
+              {
+                location: {attr_method: "name", attr_type: :string, collection: Location.where(name: "foo")},
+              }
+            end
+          end
+
+          it "stores the given ActiveRecord::Relation scope in a collection key" do
+            expect(resource.resource_relations[:location_id][:collection].where_values_hash).to eq({"name" => "foo"})
+            expect(resource.resource_relations[:location_id][:collection]).to be_a(ActiveRecord::Relation)
+          end
         end
       end
 

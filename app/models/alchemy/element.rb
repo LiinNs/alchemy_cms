@@ -22,6 +22,7 @@
 
 require_dependency "alchemy/element/definitions"
 require_dependency "alchemy/element/element_contents"
+require_dependency "alchemy/element/element_ingredients"
 require_dependency "alchemy/element/element_essences"
 require_dependency "alchemy/element/presenters"
 
@@ -39,21 +40,11 @@ module Alchemy
       "nestable_elements",
       "contents",
       "hint",
+      "ingredients",
       "taggable",
       "compact",
       "message",
       "deprecated",
-    ].freeze
-
-    SKIPPED_ATTRIBUTES_ON_COPY = [
-      "cached_tag_list",
-      "created_at",
-      "creator_id",
-      "id",
-      "folded",
-      "position",
-      "updated_at",
-      "updater_id",
     ].freeze
 
     # All Elements that share the same page version and parent element and are fixed or not are considered a list.
@@ -69,6 +60,8 @@ module Alchemy
     stampable stamper_class_name: Alchemy.user_class_name
 
     has_many :contents, dependent: :destroy, inverse_of: :element
+
+    before_destroy :delete_all_nested_elements
 
     has_many :all_nested_elements,
       -> { order(:position) },
@@ -126,6 +119,7 @@ module Alchemy
     include Definitions
     include ElementContents
     include ElementEssences
+    include ElementIngredients
     include Presenters
 
     # class methods
@@ -161,26 +155,7 @@ module Alchemy
       #   @copy.public? # => false
       #
       def copy(source_element, differences = {})
-        attributes = source_element.attributes.with_indifferent_access
-          .except(*SKIPPED_ATTRIBUTES_ON_COPY)
-          .merge(differences)
-          .merge({
-            autogenerate_contents: false,
-            autogenerate_nested_elements: false,
-            tag_list: source_element.tag_list,
-          })
-
-        new_element = create!(attributes)
-
-        if source_element.contents.any?
-          source_element.copy_contents_to(new_element)
-        end
-
-        if source_element.nested_elements.any?
-          source_element.copy_nested_elements_to(new_element)
-        end
-
-        new_element
+        Alchemy::DuplicateElement.new(source_element).call(differences)
       end
 
       def all_from_clipboard(clipboard)
@@ -311,16 +286,6 @@ module Alchemy
       definition.fetch("nestable_elements", [])
     end
 
-    # Copy all nested elements from current element to given target element.
-    def copy_nested_elements_to(target_element)
-      nested_elements.map do |nested_element|
-        Element.copy(nested_element, {
-          parent_element_id: target_element.id,
-          page_version_id: target_element.page_version_id,
-        })
-      end
-    end
-
     private
 
     def generate_nested_elements
@@ -346,6 +311,19 @@ module Alchemy
       return unless respond_to?(:touchable_pages)
 
       touchable_pages.each(&:touch)
+    end
+
+    def delete_all_nested_elements
+      deeply_nested_elements = descendent_elements(self).flatten
+      DeleteElements.new(deeply_nested_elements).call
+      nested_elements.reset
+      all_nested_elements.reset
+    end
+
+    def descendent_elements(element)
+      element.all_nested_elements + element.all_nested_elements.map do |nested_element|
+        descendent_elements(nested_element)
+      end
     end
   end
 end

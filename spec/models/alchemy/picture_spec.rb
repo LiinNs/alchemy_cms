@@ -14,10 +14,24 @@ module Alchemy
 
     it { is_expected.to have_many(:thumbs).class_name("Alchemy::PictureThumb") }
 
-    it "generates thumbnails after create" do
-      expect {
-        create(:alchemy_picture)
-      }.to change { Alchemy::PictureThumb.count }.by(3)
+    context "with a png file" do
+      it "generates thumbnails after create" do
+        expect {
+          create(:alchemy_picture)
+        }.to change { Alchemy::PictureThumb.count }.by(3)
+      end
+    end
+
+    context "with a svg file" do
+      let :image_file do
+        File.new(File.expand_path("../../fixtures/icon.svg", __dir__))
+      end
+
+      it "does not generate any thumbnails" do
+        expect {
+          create(:alchemy_picture, image_file: image_file)
+        }.to_not change { Alchemy::PictureThumb.count }
+      end
     end
 
     it "is valid with valid attributes" do
@@ -512,13 +526,12 @@ module Alchemy
         let(:picture) { create(:alchemy_picture) }
 
         let(:content) do
-          create(:alchemy_content, :essence_picture).tap do |content|
-            content.element.update_column(:updated_at, 3.hours.ago)
-          end
+          create(:alchemy_content, :essence_picture)
         end
 
         before do
           content.essence.update(picture: picture)
+          content.element.update_column(:updated_at, 3.hours.ago)
         end
 
         it "touches elements" do

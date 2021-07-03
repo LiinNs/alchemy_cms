@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_03_26_105046) do
+ActiveRecord::Schema.define(version: 2021_05_08_091432) do
 
   create_table "alchemy_attachments", force: :cascade do |t|
     t.string "name"
@@ -63,6 +63,15 @@ ActiveRecord::Schema.define(version: 2021_03_26_105046) do
     t.index ["page_id"], name: "index_alchemy_elements_alchemy_pages_on_page_id"
   end
 
+  create_table "alchemy_essence_audios", force: :cascade do |t|
+    t.integer "attachment_id"
+    t.boolean "controls", default: true, null: false
+    t.boolean "autoplay", default: false
+    t.boolean "loop", default: false, null: false
+    t.boolean "muted", default: false, null: false
+    t.index ["attachment_id"], name: "index_alchemy_essence_audios_on_attachment_id"
+  end
+
   create_table "alchemy_essence_booleans", force: :cascade do |t|
     t.boolean "value"
     t.index ["value"], name: "index_alchemy_essence_booleans_on_value"
@@ -78,6 +87,14 @@ ActiveRecord::Schema.define(version: 2021_03_26_105046) do
     t.string "css_class"
     t.string "link_text"
     t.index ["attachment_id"], name: "index_alchemy_essence_files_on_attachment_id"
+  end
+
+  create_table "alchemy_essence_headlines", force: :cascade do |t|
+    t.text "body"
+    t.integer "level"
+    t.integer "size"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
   end
 
   create_table "alchemy_essence_htmls", force: :cascade do |t|
@@ -140,11 +157,40 @@ ActiveRecord::Schema.define(version: 2021_03_26_105046) do
     t.string "link_target"
   end
 
+  create_table "alchemy_essence_videos", force: :cascade do |t|
+    t.integer "attachment_id"
+    t.string "width"
+    t.string "height"
+    t.boolean "allow_fullscreen", default: true, null: false
+    t.boolean "autoplay", default: false, null: false
+    t.boolean "controls", default: true, null: false
+    t.boolean "loop", default: false, null: false
+    t.boolean "muted", default: false, null: false
+    t.string "preload"
+    t.index ["attachment_id"], name: "index_alchemy_essence_videos_on_attachment_id"
+  end
+
   create_table "alchemy_folded_pages", force: :cascade do |t|
     t.integer "page_id", null: false
     t.integer "user_id", null: false
     t.boolean "folded", default: false, null: false
     t.index ["page_id", "user_id"], name: "index_alchemy_folded_pages_on_page_id_and_user_id", unique: true
+  end
+
+  create_table "alchemy_ingredients", force: :cascade do |t|
+    t.integer "element_id", null: false
+    t.string "type", null: false
+    t.string "role", null: false
+    t.text "value"
+    t.json "data"
+    t.string "related_object_type"
+    t.integer "related_object_id"
+    t.datetime "created_at", precision: 6, null: false
+    t.datetime "updated_at", precision: 6, null: false
+    t.index ["element_id", "role"], name: "index_alchemy_ingredients_on_element_id_and_role", unique: true
+    t.index ["element_id"], name: "index_alchemy_ingredients_on_element_id"
+    t.index ["related_object_id", "related_object_type"], name: "idx_alchemy_ingredient_relation"
+    t.index ["type"], name: "index_alchemy_ingredients_on_type"
   end
 
   create_table "alchemy_languages", force: :cascade do |t|
@@ -354,6 +400,7 @@ ActiveRecord::Schema.define(version: 2021_03_26_105046) do
   add_foreign_key "alchemy_elements", "alchemy_page_versions", column: "page_version_id", on_delete: :cascade
   add_foreign_key "alchemy_essence_nodes", "alchemy_nodes", column: "node_id"
   add_foreign_key "alchemy_essence_pages", "alchemy_pages", column: "page_id"
+  add_foreign_key "alchemy_ingredients", "alchemy_elements", column: "element_id", on_delete: :cascade
   add_foreign_key "alchemy_nodes", "alchemy_languages", column: "language_id"
   add_foreign_key "alchemy_nodes", "alchemy_pages", column: "page_id", on_delete: :cascade
   add_foreign_key "alchemy_page_versions", "alchemy_pages", column: "page_id", on_delete: :cascade

@@ -60,7 +60,33 @@ module Alchemy
           )
         end
 
-        it "creates contents" do
+        it "does not create contents" do
+          expect(element.contents).to be_empty
+        end
+      end
+
+      context "if ingredients are defined as well" do
+        before do
+          expect_any_instance_of(Alchemy::Element).to receive(:definition).at_least(:once) do
+            {
+              name: "article",
+              contents: [
+                {
+                  name: "headline",
+                  type: "EssenceText",
+                },
+              ],
+              ingredients: [
+                {
+                  role: "headline",
+                  type: "Text",
+                },
+              ],
+            }.with_indifferent_access
+          end
+        end
+
+        it "does not create contents" do
           expect(element.contents).to be_empty
         end
       end
@@ -966,6 +992,20 @@ module Alchemy
         parent_element.update_column(:updated_at, 3.days.ago)
         expect { element.update!(public: false) }.to change(parent_element, :updated_at)
       end
+    end
+  end
+
+  describe "destroy callbacks" do
+    let(:element) { create(:alchemy_element) }
+    let!(:nested_element_1) { create(:alchemy_element, parent_element: element) }
+    let!(:nested_element_2) { create(:alchemy_element, parent_element: nested_element_1) }
+    let!(:nested_element_3) { create(:alchemy_element, parent_element: nested_element_2) }
+
+    it "destroys all the nested elements quickly" do
+      expect(Alchemy::DeleteElements).to receive(:new).with(
+        [nested_element_1, nested_element_2, nested_element_3]
+      ).and_call_original
+      element.reload.destroy!
     end
   end
 end

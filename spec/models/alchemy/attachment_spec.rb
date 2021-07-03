@@ -36,17 +36,16 @@ module Alchemy
         let(:attachment) { create(:alchemy_attachment) }
 
         let(:content) do
-          create(:alchemy_content, :essence_file).tap do |content|
-            content.element.update_column(:updated_at, 3.hours.ago)
-          end
+          create(:alchemy_content, :essence_file)
         end
 
         before do
           content.essence.update(attachment: attachment)
+          content.element.update_column(:updated_at, 3.hours.ago)
         end
 
         it "touches elements" do
-          expect { attachment.save }.to change { attachment.elements.reload.first.updated_at }
+          expect { attachment.update(name: "image with spaces") }.to change { attachment.elements.reload.first.updated_at }
         end
       end
     end

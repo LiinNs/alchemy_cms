@@ -7,7 +7,7 @@ module Alchemy
     extend ActiveSupport::Concern
 
     module ClassMethods
-      SKIPPED_ATTRIBUTES_ON_COPY = %w(position created_at updated_at creator_id updater_id id)
+      SKIPPED_ATTRIBUTES_ON_COPY = %w(position created_at updated_at creator_id updater_id element_id id)
 
       # Builds a new content as descriped in the elements.yml file.
       #
@@ -19,13 +19,13 @@ module Alchemy
         return super if attributes.empty? || element.nil?
 
         definition = element.content_definition_for(attributes[:name])
-        if definition.blank?
+        if definition.blank? && attributes[:essence_type].nil?
           raise ContentDefinitionError, "No definition found in elements.yml for #{attributes.inspect} and #{element.inspect}"
         end
 
         super(
-          name: definition[:name],
-          essence_type: normalize_essence_type(definition[:type]),
+          name: attributes[:name],
+          essence_type: attributes[:essence_type] || normalize_essence_type(definition[:type]),
           element: element
         ).tap(&:build_essence)
       end
@@ -54,7 +54,7 @@ module Alchemy
       #
       def copy(source, differences = {})
         Content.new(
-          source.attributes.
+          source.attributes.with_indifferent_access.
             except(*SKIPPED_ATTRIBUTES_ON_COPY).
             merge(differences.with_indifferent_access)
         ).tap do |new_content|
@@ -116,8 +116,8 @@ module Alchemy
     # If an optional type is passed, this type of essence gets created.
     #
     def build_essence(attributes = {})
-      self.essence = essence_class(essence_type).new(
-        { ingredient: default_value }.merge(attributes)
+      self.essence = essence_class.new(
+        { content: self, ingredient: default_value }.merge(attributes)
       )
     end
 
@@ -132,12 +132,10 @@ module Alchemy
 
     private
 
-    # Returns a class constant from definition's type field.
+    # Returns a class constant from definition's type field or the essence_type column
     #
-    # If an optional type is passed, this type of essence gets constantized.
-    #
-    def essence_class(type = nil)
-      Content.normalize_essence_type(type || definition["type"]).constantize
+    def essence_class
+      (essence_type || Content.normalize_essence_type(definition["type"])).constantize
     end
   end
 end

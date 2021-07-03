@@ -128,6 +128,7 @@ describe Alchemy::Permissions do
 
     it "can see all pictures" do
       is_expected.to be_able_to(:read, Alchemy::Picture)
+      is_expected.to be_able_to(:url, Alchemy::Picture)
     end
 
     it "can manage contents" do
@@ -135,8 +136,11 @@ describe Alchemy::Permissions do
     end
 
     it "can manage essences" do
-      is_expected.to be_able_to(:manage, Alchemy::EssencePicture)
+      is_expected.to be_able_to(:manage, Alchemy::EssenceAudio)
       is_expected.to be_able_to(:manage, Alchemy::EssenceFile)
+      is_expected.to be_able_to(:manage, Alchemy::EssencePicture)
+      is_expected.to be_able_to(:manage, Alchemy::EssenceVideo)
+      is_expected.to be_able_to(:manage, Alchemy::Ingredient)
     end
 
     it "can manage the clipboard" do

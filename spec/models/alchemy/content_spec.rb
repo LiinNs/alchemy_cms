@@ -5,7 +5,7 @@ require "rails_helper"
 module Alchemy
   describe Content do
     let(:element) { create(:alchemy_element, :with_contents, name: "headline") }
-    let(:content) { element.contents.find_by(essence_type: "Alchemy::EssenceText") }
+    let(:content) { element.contents.find_by(name: "headline") }
 
     it "should return the ingredient from its essence" do
       content.essence.update_columns(body: "Hello")
@@ -162,6 +162,18 @@ module Alchemy
       it "builds a new essence instance from elements.yml definition" do
         expect(subject.essence).to be_instance_of(EssenceText)
         expect(subject.essence).to_not be_persisted
+      end
+
+      context "when given an essence_type attribute that is not in the definition" do
+        let(:arguments) { { element: element, essence_type: "Alchemy::EssenceText", name: "not_in_elements_yml" } }
+
+        subject { Content.new(arguments) }
+
+        it "does not raise an error" do
+          expect { subject }.not_to raise_exception
+          expect(subject.name).to eq("not_in_elements_yml")
+          expect(subject.essence).to be_a(Alchemy::EssenceText)
+        end
       end
     end
 

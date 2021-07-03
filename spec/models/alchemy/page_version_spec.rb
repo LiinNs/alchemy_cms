@@ -116,5 +116,36 @@ describe Alchemy::PageVersion do
 
       it { is_expected.to be(false) }
     end
+
+    describe "dependent element destruction" do
+      let!(:parent_element) { create(:alchemy_element, :with_nestable_elements, :with_contents) }
+      let!(:nested_element) { parent_element.nested_elements.first }
+      let!(:normal_element) { create(:alchemy_element, :with_contents) }
+
+      let(:page_version) { create(:alchemy_page_version) }
+
+      before do
+        Alchemy::Element.update_all(page_version_id: page_version.id)
+      end
+
+      it "deletes all elements along with the page version" do
+        page_version.destroy!
+        expect(Alchemy::Element.count).to be_zero
+        expect(Alchemy::Content.count).to be_zero
+        expect(Alchemy::EssenceText.count).to be_zero
+        expect(Alchemy::EssencePicture.count).to be_zero
+        expect(Alchemy::EssenceRichtext.count).to be_zero
+      end
+    end
+
+    describe "#element_repository" do
+      let(:page_version) { create(:alchemy_page_version, :with_elements) }
+      subject { page_version.element_repository }
+
+      it "is an element repository containing the pages elements" do
+        expect(Alchemy::ElementsRepository).to receive(:new).with(page_version.elements).and_call_original
+        expect(subject).to be_a(Alchemy::ElementsRepository)
+      end
+    end
   end
 end

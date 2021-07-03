@@ -86,12 +86,14 @@ module Alchemy
     dragonfly_accessor :image_file, app: :alchemy_pictures do
       # Preprocess after uploading the picture
       after_assign do |image|
-        self.class.preprocessor_class.new(image).call
+        if has_convertible_format?
+          self.class.preprocessor_class.new(image).call
+        end
       end
     end
 
     # Create important thumbnails upfront
-    after_create -> { PictureThumb.generate_thumbs!(self) }
+    after_create -> { PictureThumb.generate_thumbs!(self) if has_convertible_format? }
 
     # We need to define this method here to have it available in the validations below.
     class << self
